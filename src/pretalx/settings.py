@@ -501,6 +501,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",  # Uses sessions
     "csp.middleware.CSPMiddleware",  # Modifies/sets CSP headers
     "pretalx.common.middleware.EventMiddleware",  # Validates the host, sets request.organiser/event, updates locale, handles permissions and redirects
+    "pretalx.common.middleware.ReviewExposureLedgerMiddleware",  # Persists review information exposure batches after successful 2xx responses, inside event scope
     "pretalx.common.middleware.SessionValidityMiddleware",  # Enforces session timeouts in the organiser area. Needs the authenticated user.
     "pretalx.common.middleware.EmailVerificationMiddleware",  # Sends users with unverified email addresses to the verification page. Needs the resolved event.
     "pretalx.common.middleware.CsrfViewMiddleware",  # Protect against CSRF attacks before forms/data are processed

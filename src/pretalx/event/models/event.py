@@ -143,6 +143,10 @@ def default_review_settings():
         "text_mandatory": False,
         "aggregate_method": "median",  # or mean
         "score_format": "words_numbers",
+        "review_exposure_ledger": False,
+        # Immutable ISO timestamp of the first time the exposure ledger was
+        # enabled; never reset when the ledger is switched off and on again.
+        "review_exposure_ledger_started": None,
     }
 
 

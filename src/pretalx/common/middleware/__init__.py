@@ -4,6 +4,7 @@
 from .domains import CsrfViewMiddleware, SessionMiddleware
 from .event import EventMiddleware
 from .locale import LocaleMiddleware
+from .review_exposure import ReviewExposureLedgerMiddleware
 from .security import RejectInvalidInputMiddleware, SessionValidityMiddleware
 from .static import PretalxWhiteNoiseMiddleware
 from .verification import EmailVerificationMiddleware
@@ -15,6 +16,7 @@ __all__ = [
     "LocaleMiddleware",
     "PretalxWhiteNoiseMiddleware",
     "RejectInvalidInputMiddleware",
+    "ReviewExposureLedgerMiddleware",
     "SessionMiddleware",
     "SessionValidityMiddleware",
 ]

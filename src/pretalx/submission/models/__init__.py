@@ -8,6 +8,13 @@ from .feedback import Feedback
 from .question import Answer, AnswerOption, Question, QuestionTarget, QuestionVariant
 from .resource import Resource
 from .review import Review, ReviewPhase, ReviewScore, ReviewScoreCategory
+from .review_audit import (
+    ExposureKind,
+    ExposureSource,
+    ReviewExposureBatch,
+    ReviewExposureEntry,
+    ReviewScoreVersion,
+)
 from .signup import AttendeeSignup
 from .submission import SpeakerRole, Submission, SubmissionInvitation, SubmissionStates
 from .tag import Tag
@@ -19,15 +26,20 @@ __all__ = [
     "AnswerOption",
     "AttendeeSignup",
     "CfP",
+    "ExposureKind",
+    "ExposureSource",
     "Feedback",
     "Question",
     "QuestionTarget",
     "QuestionVariant",
     "Resource",
     "Review",
+    "ReviewExposureBatch",
+    "ReviewExposureEntry",
     "ReviewPhase",
     "ReviewScore",
     "ReviewScoreCategory",
+    "ReviewScoreVersion",
     "SpeakerRole",
     "Submission",
     "SubmissionComment",

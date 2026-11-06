@@ -11,6 +11,11 @@ from pretalx.api.serializers.question import AnswerSerializer
 from pretalx.api.versions import register_serializer
 from pretalx.person.models import User
 from pretalx.submission.domain.review import update_review_score
+from pretalx.submission.domain.review_audit import (
+    ExposureSource,
+    create_score_version,
+    ledger_enabled,
+)
 from pretalx.submission.models import (
     Review,
     ReviewScore,
@@ -123,6 +128,14 @@ class ReviewWriteSerializer(FlexFieldsSerializerMixin, PretalxSerializer):
             raise ValidationError("You have already reviewed this submission.")
         return value
 
+    def _write_source(self):
+        action = getattr(self.context.get("view"), "action", None)
+        return (
+            ExposureSource.API_REVIEW_LIST
+            if action == "create"
+            else ExposureSource.API_REVIEW_DETAIL
+        )
+
     def create(self, validated_data):
         try:
             with transaction.atomic():
@@ -133,14 +146,34 @@ class ReviewWriteSerializer(FlexFieldsSerializerMixin, PretalxSerializer):
             ) from exc
         if instance.scores.exists():
             update_review_score(instance)
+        # Accepted human write via the API: immutable version, same code path
+        # and semantics as the UI forms.
+        if self.event and ledger_enabled(self.event):
+            create_score_version(
+                review=instance,
+                source=self._write_source(),
+                event=self.event,
+                submission=validated_data["submission"],
+                user=self.context["request"].user,
+            )
         return instance
 
     def update(self, instance, validated_data):
         validated_data["user"] = self.context["request"].user
         has_scores = "scores" in validated_data
+        own_prior_score = instance.score
         instance = super().update(instance, validated_data)
         if has_scores:
             update_review_score(instance)
+        if self.event and ledger_enabled(self.event):
+            create_score_version(
+                review=instance,
+                source=self._write_source(),
+                own_prior_score=own_prior_score,
+                event=self.event,
+                submission=instance.submission,
+                user=self.context["request"].user,
+            )
         return instance
 
 

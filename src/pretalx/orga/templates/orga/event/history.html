@@ -22,6 +22,11 @@ SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-Pretalx-AGPL-3.0-Terms
 {% block content %}
     {% #page_heading %}
     {% translate "Event History" %}
+    {% #slot buttons %}
+    <a class="btn btn-secondary" href="{{ request.event.orga_urls.base }}history/review-exposure/">
+        {% translate "Review exposure ledger" %}
+    </a>
+    {% /slot %}
     {% /page_heading %}
 
     <div id="table-wrapper-{{ filter_table_name }}" class="table-wrapper" data-table-name="{{ filter_table_name }}">

@@ -55,6 +55,13 @@ from pretalx.submission.domain.queries.submission import (
     reviewable_submissions_for_user,
     unreviewed_submissions_for_user,
 )
+from pretalx.submission.domain.review_audit import (
+    IDENTITY_NAME,
+    ExposureSource,
+    get_request_ledger,
+    record_bulk_rows_exposure,
+    record_single_page_exposure,
+)
 from pretalx.submission.domain.submission import (
     send_state_mail,
     set_pending_state,
@@ -66,6 +73,8 @@ from pretalx.submission.models import (
     QuestionTarget,
     QuestionVariant,
     Review,
+    ReviewScore,
+    SpeakerRole,
     Submission,
     SubmissionStates,
 )
@@ -241,6 +250,92 @@ class ReviewDashboard(
         result["next_submission"] = missing_reviews[0] if missing_reviews else None
         return result
 
+    def render_to_response(self, context, **response_kwargs):
+        self._record_exposure_ledger(context)
+        return super().render_to_response(context, **response_kwargs)
+
+    def _record_exposure_ledger(self, context):
+        # Only the rows of the page actually rendered are registered.
+        page_obj = context.get("page_obj")
+        ledger = get_request_ledger(
+            self.request,
+            source=ExposureSource.UI_DASHBOARD,
+            page=str(page_obj.number) if page_obj else "",
+        )
+        if not ledger or not ledger.active:
+            return
+        rows = list(context["object_list"])
+        row_ids = [submission.pk for submission in rows]
+        if not row_ids:
+            return
+
+        can_view_speakers = self.request.user.has_perm(
+            "person.reviewer_list_speakerprofile", self.request.event
+        )
+        if can_view_speakers:
+            speaker_rows = SpeakerRole.objects.filter(
+                submission_id__in=row_ids
+            ).values_list("submission_id", flat=True)
+            submissions_with_speakers = set(speaker_rows)
+        else:
+            submissions_with_speakers = set()
+
+        independent_other_counts = {}
+        if self.can_see_all_reviews and self.independent_categories:
+            independent_other_counts = {
+                (row["submission_id"], row["category_id"]): row["count"]
+                for row in (
+                    ReviewScore.objects.filter(
+                        category__in=list(self.independent_categories),
+                        reviews__submission_id__in=row_ids,
+                    )
+                    .exclude(reviews__user=self.request.user)
+                    .values("reviews__submission_id", "category_id")
+                    .annotate(count=Count("id"))
+                )
+            }
+
+        aggregate_method = self.request.event.review_settings["aggregate_method"]
+        table = context.get("table")
+        for position, submission in enumerate(rows):
+            if can_view_speakers and submission.pk in submissions_with_speakers:
+                ledger.add_identity(
+                    submission, forms=[IDENTITY_NAME], position=position
+                )
+            if not self.can_see_all_reviews:
+                continue
+            # ``review_nonnull_count`` counts every non-null score,
+            # ``user_score`` is the viewer's own score: the aggregate column
+            # only constitutes exposure when others' non-null scores feed it.
+            own_nonnull = 1 if submission.user_score is not None else 0
+            others_nonnull = submission.review_nonnull_count - own_nonnull
+            if others_nonnull <= 0:
+                continue
+            aggregate_value = getattr(submission, f"{aggregate_method}_score", None)
+            methods = (
+                {aggregate_method: float(aggregate_value)}
+                if aggregate_value is not None
+                else {}
+            )
+            independent = {}
+            for category in self.independent_categories:
+                if independent_other_counts.get((submission.pk, category.pk)):
+                    shown = (
+                        table.get_independent_score(submission, category.pk)
+                        if table is not None
+                        else None
+                    )
+                    independent[str(category.pk)] = (
+                        float(shown) if shown is not None else None
+                    )
+            ledger.add_aggregate(
+                submission,
+                methods=methods,
+                others_nonnull_count=others_nonnull,
+                independent=independent,
+                position=position,
+            )
+
     def get_pending(self, request):
         form = SubmissionStateChangeForm(request.POST)
         form.is_valid()
@@ -397,6 +492,7 @@ class BulkReview(EventPermissionRequired, Filterable, TemplateView):
             categories=self._categories_for_submission(submission),
             data=(self.request.POST if bind_data else None),
             default_renderer=InlineFormRenderer,
+            source="ui_bulk",
         )
         # The default widget is the full MarkdownWidget with preview, editor row etc,
         # which is a lot of clutter when you can see hundreds of these fields on a
@@ -445,6 +541,25 @@ class BulkReview(EventPermissionRequired, Filterable, TemplateView):
             for submission in self.submissions
         ]
 
+    def render_to_response(self, context, **response_kwargs):
+        # GET page: author names are rendered for every displayed row when
+        # the reviewer may see speaker profiles.
+        ledger = get_request_ledger(self.request, source=ExposureSource.UI_BULK)
+        if ledger and ledger.active:
+            record_bulk_rows_exposure(
+                ledger,
+                [row["submission"] for row in self.table],
+                can_view_speakers=self.can_view_speakers,
+            )
+        return super().render_to_response(context, **response_kwargs)
+
+    def _record_row_exposure(self, submission):
+        ledger = get_request_ledger(self.request, source=ExposureSource.UI_BULK)
+        if ledger and ledger.active:
+            record_bulk_rows_exposure(
+                ledger, [submission], can_view_speakers=self.can_view_speakers
+            )
+
     @transaction.atomic
     def post(self, request, *args, **kwargs):
         submission_code = request.POST.get("_submission", "")
@@ -475,6 +590,9 @@ class BulkReview(EventPermissionRequired, Filterable, TemplateView):
                 return redirect(request.path)
             row = self._build_row(submission, form, state="error")
 
+        # The 200 row fragment renders speaker names for this one row when
+        # permitted; register its actual output (saved and error states alike).
+        self._record_row_exposure(submission)
         return render(
             request,
             "orga/review/bulk.html#bulk-review-row",
@@ -707,6 +825,7 @@ class ReviewSubmission(ReviewViewMixin, PermissionRequired, CreateOrUpdateView):
             return []
         return [
             {
+                "id": review.pk,
                 "score": review.display_score,
                 "scores": self.get_scores_for_review(review),
                 "text": review.text,
@@ -773,6 +892,36 @@ class ReviewSubmission(ReviewViewMixin, PermissionRequired, CreateOrUpdateView):
             question__in=questions_for_user(self.submission.event, self.request.user)
         )
         return result
+
+    def render_to_response(self, context, **response_kwargs):
+        # Runs for GET and for 200 form-validation-failure pages, but not for
+        # the successful-save redirect. Mirrors the exact template gates.
+        self._record_exposure_ledger()
+        return super().render_to_response(context, **response_kwargs)
+
+    def _record_exposure_ledger(self):
+        ledger = get_request_ledger(self.request, source=ExposureSource.UI_SINGLE)
+        if not ledger or not ledger.active:
+            return
+        user = self.request.user
+        submission = self.submission
+        can_view_speakers = user.has_perm(
+            "person.reviewer_list_speakerprofile", submission
+        )
+        can_view_other_reviews = user.has_perm(
+            "submission.view_all_reviews_submission", submission
+        )
+        can_view_reviewer_names = user.has_perm(
+            "submission.list_reviewers_review", submission
+        )
+        record_single_page_exposure(
+            ledger,
+            submission=submission,
+            speakers=(self.speakers if can_view_speakers else []),
+            can_view_speakers=can_view_speakers,
+            review_rows=(self.reviews if can_view_other_reviews else []),
+            can_view_reviewer_names=can_view_reviewer_names,
+        )
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()

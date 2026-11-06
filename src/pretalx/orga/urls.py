@@ -146,6 +146,11 @@ urlpatterns = [
                     name="event.history.detail",
                 ),
                 path(
+                    "history/review-exposure/",
+                    event.ReviewExposureLedgerExport.as_view(),
+                    name="event.history.review_exposure",
+                ),
+                path(
                     "preferences/", person.PreferencesView.as_view(), name="preferences"
                 ),
                 path(

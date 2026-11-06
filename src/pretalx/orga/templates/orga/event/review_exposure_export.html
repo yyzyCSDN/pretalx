@@ -1,0 +1,60 @@
+{% extends "orga/base.html" %}
+{% comment %}
+SPDX-FileCopyrightText: 2026-present Tobias Kunze
+SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-Pretalx-AGPL-3.0-Terms
+{% endcomment %}
+
+{% load i18n %}
+
+{% block extra_title %}{% translate "Review exposure ledger" %} ::
+{% endblock extra_title %}
+
+{% block content %}
+    {% #page_heading %}
+    {% translate "Review exposure ledger" %}
+    {% /page_heading %}
+
+    <p>
+        {% blocktranslate trimmed %}
+            This export contains the immutable per-review snapshots and the minimum
+            evidence needed to audit which author identities, other reviews and
+            aggregate scores reviewers had been shown before submitting each score.
+            It does not contain proposal materials such as abstracts or descriptions.
+        {% endblocktranslate %}
+    </p>
+
+    <dl class="mb-3">
+        <dt>{% translate "Status" %}</dt>
+        <dd>
+            {% if meta.enabled %}
+                {% translate "Recording" %}
+            {% elif meta.observation_start %}
+                {% translate "Disabled (history retained)" %}
+            {% else %}
+                {% translate "Unknown (never enabled)" %}
+            {% endif %}
+        </dd>
+        <dt>{% translate "Observation start" %}</dt>
+        <dd>{{ meta.observation_start|default:_("unknown") }}</dd>
+        <dt>{% translate "Recorded exposure batches" %}</dt>
+        <dd>{{ batch_count }}</dd>
+        <dt>{% translate "Recorded score versions" %}</dt>
+        <dd>{{ version_count }}</dd>
+    </dl>
+
+    <div class="submit-group">
+        <span>
+            <a class="btn btn-success" href="?format=json" download="{{ filename }}.json">
+                {% translate "Download JSON" %}
+            </a>
+            <a class="btn btn-primary" href="?format=csv" download="{{ filename }}.csv">
+                {% translate "Download CSV (score versions)" %}
+            </a>
+        </span>
+    </div>
+
+    <details>
+        <summary>{% translate "Preview JSON data" %}</summary>
+        <pre class="mt-2">{{ ledger_data }}</pre>
+    </details>
+{% endblock content %}

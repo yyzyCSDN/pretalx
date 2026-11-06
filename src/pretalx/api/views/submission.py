@@ -39,6 +39,7 @@ from pretalx.api.serializers.submission import (
 )
 from pretalx.api.versions import CURRENT_VERSION, DEV_PREVIEW, V1, register_serializer
 from pretalx.api.views.mixins import ActivityLogMixin, PretalxViewSetMixin
+from pretalx.api.views.review_audit import SubmissionApiExposureAuditMixin
 from pretalx.common.exceptions import SubmissionError
 from pretalx.person.domain.profile import create_speaker_profile
 from pretalx.person.domain.queries.profile import speaker_by_email
@@ -192,7 +193,12 @@ class RemoveSpeakerSerializer(serializers.Serializer):
         responses={200: AttendeeSignupSerializer(many=True)},
     ),
 )
-class SubmissionViewSet(ActivityLogMixin, PretalxViewSetMixin, viewsets.ModelViewSet):
+class SubmissionViewSet(
+    SubmissionApiExposureAuditMixin,
+    ActivityLogMixin,
+    PretalxViewSetMixin,
+    viewsets.ModelViewSet,
+):
     serializer_class = SubmissionSerializer
     queryset = Submission.objects.none()
     lookup_field = "code__iexact"

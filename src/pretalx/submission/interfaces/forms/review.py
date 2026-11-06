@@ -81,6 +81,16 @@ class ReviewSettingsForm(
         widget=I18nTextarea,
         required=False,
     )
+    review_exposure_ledger = forms.BooleanField(
+        label=_("Record review exposure ledger"),
+        help_text=_(
+            "Records which author identities, other reviews and aggregate scores reviewers actually see while reviewing, "
+            "and keeps immutable snapshots of every review submitted. Can be enabled before reviewing starts. "
+            "The observation start point is recorded once and never reset, and history is retained when phases, "
+            "tracks or teams change."
+        ),
+        required=False,
+    )
 
     class Media:
         js = [forms.Script("orga/js/forms/reviewsettings.js", defer="")]
@@ -91,9 +101,22 @@ class ReviewSettingsForm(
             "text_mandatory": "review_settings",
             "aggregate_method": "review_settings",
             "score_format": "review_settings",
+            "review_exposure_ledger": "review_settings",
             "use_submission_comments": "feature_flags",
         }
         hierarkey_fields = ("review_help_text",)
+
+    def save(self, *args, **kwargs):
+        instance = super().save(*args, **kwargs)
+        if self.cleaned_data.get("review_exposure_ledger"):
+            # Stamp the immutable observation start point on first enable;
+            # repeated saves or disable/enable cycles must not reset it.
+            from pretalx.submission.domain.review_audit import (  # noqa: PLC0415 -- avoid app-loading cycle
+                ensure_observation_start,
+            )
+
+            ensure_observation_start(instance)
+        return instance
 
 
 class ReviewPhaseForm(PretalxI18nModelForm):
@@ -262,12 +285,14 @@ class ReviewForm(ReadOnlyFlag, forms.ModelForm):
         categories=None,
         submission=None,
         default_renderer=None,
+        source="ui_single",
         **kwargs,
     ):
         self.event = event
         self.user = user
         self.categories = categories
         self.submission = submission
+        self.source = source
         self.default_renderer = default_renderer or self.default_renderer
 
         super().__init__(*args, instance=instance, **kwargs)
@@ -355,6 +380,8 @@ class ReviewForm(ReadOnlyFlag, forms.ModelForm):
             user=self.user,
             text=self.cleaned_data.get("text"),
             scores=scores,
+            source=self.source,
+            event=self.event,
         )
         return self.instance
 

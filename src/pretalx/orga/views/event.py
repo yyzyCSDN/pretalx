@@ -4,6 +4,7 @@
 # This file contains Apache-2.0 licensed contributions copyrighted by the following contributors:
 # SPDX-FileContributor: luto
 
+import json
 import smtplib
 from contextlib import suppress
 from pathlib import Path
@@ -297,6 +298,80 @@ class EventHistoryDetail(EventSettingsPermission, LogDetailView):
     def get_queryset(self):
         return ActivityLog.objects.filter(event=self.request.event).select_related(
             "event__cfp", "person__profile_picture"
+        )
+
+
+class ReviewExposureLedgerExport(EventSettingsPermission, View):
+    """CSV/JSON export of the review information exposure ledger.
+
+    Uses the same permission as the activity history page and returns only
+    minimal audit evidence (codes, categories, sources, order and immutable
+    version snapshots), never proposal materials.
+    """
+
+    def get(self, request, *args, **kwargs):
+        from i18nfield.utils import I18nJSONEncoder  # noqa: PLC0415
+
+        from pretalx.common.exporter import render_csv  # noqa: PLC0415
+        from pretalx.submission.domain.review_audit import (  # noqa: PLC0415
+            build_ledger_export,
+        )
+
+        export_format = request.GET.get("format", "json")
+        data = build_ledger_export(request.event)
+        filename = f"{request.event.slug}_review_exposure_ledger"
+        if export_format == "csv":
+            fieldnames = [
+                "version_id",
+                "version_number",
+                "created",
+                "source",
+                "user_code",
+                "user_name",
+                "submission_code",
+                "text_snapshot",
+                "total_score",
+                "score_choices_snapshot",
+                "display_score_snapshot",
+                "bound_exposures",
+            ]
+            rows = []
+            for version in data["versions"]:
+                row = dict(version)
+                for key in (
+                    "score_choices_snapshot",
+                    "display_score_snapshot",
+                    "bound_exposures",
+                ):
+                    row[key] = json.dumps(row[key], cls=I18nJSONEncoder)
+                rows.append(row)
+            content = render_csv(fieldnames=fieldnames, rows=rows)
+            return HttpResponse(
+                content,
+                content_type="text/plain; charset=utf-8",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename}.csv"'
+                },
+            )
+        content = json.dumps(data, cls=I18nJSONEncoder, indent=2)
+        if export_format == "json":
+            return HttpResponse(
+                content,
+                content_type="application/json",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename}.json"'
+                },
+            )
+        return render(
+            request,
+            "orga/event/review_exposure_export.html",
+            {
+                "ledger_data": content,
+                "meta": data["meta"],
+                "version_count": len(data["versions"]),
+                "batch_count": len(data["batches"]),
+                "filename": filename,
+            },
         )
 
 

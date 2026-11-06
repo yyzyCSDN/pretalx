@@ -8,15 +8,37 @@ from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 
 
-def create_or_update_review(*, submission, user, text, scores=()):
+def create_or_update_review(
+    *, submission, user, text, scores=(), source="ui_single", event=None
+):
     review, created = submission.reviews.get_or_create(
         user=user, defaults={"text": text}
     )
+    own_prior_score = None if created else review.score
     if not created:
         review.text = text
         review.save()
     review.scores.set(scores)
     update_review_score(review)
+    # Record the immutable exposure-ledger version for this accepted human
+    # submission. No-op when the ledger is disabled. Abstentions (the separate
+    # get_or_create path in the view), skips and automatic recalculation never
+    # call this function.
+    from pretalx.submission.domain.review_audit import (  # noqa: PLC0415 -- local to avoid import cycle
+        create_score_version,
+        ledger_enabled,
+    )
+
+    event = event or submission.event
+    if ledger_enabled(event):
+        create_score_version(
+            review=review,
+            source=source,
+            own_prior_score=own_prior_score,
+            event=event,
+            submission=submission,
+            user=user,
+        )
     return review
 
 

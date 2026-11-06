@@ -17,6 +17,7 @@ from pretalx.api.filters.ordering import TiebreakerOrderingFilter
 from pretalx.api.filters.review import ReviewFilter
 from pretalx.api.serializers.review import ReviewSerializer, ReviewWriteSerializer
 from pretalx.api.views.mixins import ActivityLogMixin, PretalxViewSetMixin
+from pretalx.api.views.review_audit import ReviewApiExposureAuditMixin
 from pretalx.submission.domain.queries.submission import submissions_for_user
 from pretalx.submission.enums import SubmissionContext
 from pretalx.submission.models import Answer, Review, Submission
@@ -66,7 +67,10 @@ class ReviewSearchFilter(filters.SearchFilter):
     ),
     destroy=extend_schema(summary="Delete Reviews"),
 )
-class ReviewViewSet(ActivityLogMixin, PretalxViewSetMixin, viewsets.ModelViewSet):
+class ReviewViewSet(
+    ReviewApiExposureAuditMixin, ActivityLogMixin, PretalxViewSetMixin,
+    viewsets.ModelViewSet,
+):
     serializer_class = ReviewSerializer
     queryset = Review.objects.none()
     filter_backends = (
